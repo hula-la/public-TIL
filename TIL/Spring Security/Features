@@ -1,0 +1,145 @@
+# 5. Features
+
+- 스프링 시큐리티는 인증, 인가, 주요 취약점 공격 방어를 종합적으로 지원
+
+### 5.1 Authentication
+
+ 인증은 특정 리소스에 접근하려고 하는 사용자가 누구인지를 확인할 때 사용. 
+
+보통 이름, 비밀번호 입력해서 인증.
+
+### 5.1.2 Password Storage
+
+#####  `PasswordEncoder`
+
+- 비밀번호를 안전하게 저장할 수 있도록 단방향 변환 수행
+
+  > ##### Password Storage History
+  >
+  > - 일반 텍스트로 암호 저장
+  >   - 악의적인 SQL 인젝션 등의 공격으로 사용자 이름과 비밀번호 "데이터 덤프"를 읽어갈 수 있는 방법 존재
+  >   - 보안 취약
+  > - SHA-256 같은 단방향 해시 적용
+  >   - 인증 시도시, 해시 처리한 비밀번호와 사용자가 입력한 비밀번호의 해시값과 비교
+  >   - 비밀번호를 계산해서 룩업 테이블을 만드는 악의적인 사용자들이 있었음.
+  > - 솔티드 패스워드 (salted password)
+  >   - 룩업 테이블을 무력화하는 방법
+  >   - 비밀번호를 해시 함수 입력으로 사용하는 대신, 모든 사용자의 비밀번호로 랜덤 바이트 (솔트로 알려진) 를 만듦.
+  >   - 솔트와 사용자의 비밀번호로 해시 함수를 실행하면 유니크한 해시값을 생성
+  >   - 솔트는 사용자의 비밀번호와 함께 일반 텍스트로 저장
+  >   - 사용자가 인증 시도시, 해시처리한 비밀번호를 저장된 솔트와 사용자가 입력한 비밀번호의 해시값과 비교
+  >   - 솔트는 유니크하기 때문에 솔트와 비밀번호 조합도 절대 동일할 수 없음.
+
+`DelegatingPasswordEncoder`
+
+- `NoOpPasswordEncoder`: 스프링 시큐리티 5.0 버전 이전엔 일반 텍스트 비밀번호를 받는 인코더
+- `BcryptPasswordEncoder`: 현재 디폴트
+  - 비밀번호를 저장하기 위한 최선의 관행은 또다시 바뀔 것
+  - 스프링 시큐리티는 프레임워크이기 때문에 하위 호환성을 보장하지 않는 업데이트를 자주 할 순 없음
+- ` DelegatingPasswordEncoder`
+  - 비밀번호를 현재 권장하는 저장 방식으로 인코딩함을 보장
+  - 비밀번호 검증은 최신 형식과 레거시 형식을 모두 지원
+  - 나중에 인코딩을 변경할 수 있음
+
+##### 	Example 18. Create Default DelegatingPasswordEncoder
+
+```java
+PasswordEncoder passwordEncoder =
+    PasswordEncoderFactories.createDelegatingPasswordEncoder();
+```
+
+##### 	Example 19. Create Custom DelegatingPasswordEncoder
+
+```java
+String idForEncode = "bcrypt";
+Map encoders = new HashMap<>();
+encoders.put(idForEncode, new BCryptPasswordEncoder());
+encoders.put("noop", NoOpPasswordEncoder.getInstance());
+encoders.put("pbkdf2", new Pbkdf2PasswordEncoder());
+encoders.put("scrypt", new SCryptPasswordEncoder());
+encoders.put("sha256", new StandardPasswordEncoder());
+
+PasswordEncoder passwordEncoder =
+    new DelegatingPasswordEncoder(idForEncode, encoders);
+```
+
+##### 	Example 20. DelegatingPasswordEncoder Storage Format
+
+```java
+{id}encodePassword
+```
+
+- `id` : `PasswordEncorder` 식별
+- `encodePassword`: 잉코딩된 비밀번호
+
+##### 	Example 21. DelegatingPasswordEncoder Encoded Passwords Example
+
+```java
+{bcrypt}$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG // (1)
+{noop}password // (2)
+{pbkdf2}5d923b44a6d129f3ddf3e3c8d29412723dcbde72445e8ef6bf3b508fbf17fa4ed4d6b99ca763d8dc // (3)
+{scrypt}$e0801$8bWJaSu2IKSn9Z9kM+TPXfOc/9bdYSrN1oD9qfVThWEwdRTnO7re7Ei+fUZRJ68k9lTyuTeUp4of4g24hHnazw==$OAOec05+bXxvuu/1qZ6NUR+xQYvYv7BeL1QxwRpY5Pc= // (4)
+{sha256}97cde38028ad898ebc02e690819fa220e88c62e0699403e94fff291cfffaf8410849f27605abcbc0 // (5)
+```
+
+
+
+### Getting Started Experience
+
+##### Example 23. withDefaultPasswordEncoder Example
+
+```java
+User user = User.withDefaultPasswordEncoder()
+  .username("user")
+  .password("password")
+  .roles("user")
+  .build();
+System.out.println(user.getPassword());
+// {bcrypt}$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG
+```
+
+##### Example 24. withDefaultPasswordEncoder Reusing the Builder
+
+- 빌더를 재사용해서 편함
+- 하지만 메모리나 컴파일된 소스 코드에 비밀번호가 노출됨
+- 프로덕션 환경에선 비밀번호를 외부에서 해싱해야 함
+
+```java
+UserBuilder users = User.withDefaultPasswordEncoder();
+User user = users
+  .username("user")
+  .password("password")
+  .roles("USER")
+  .build();
+User admin = users
+  .username("admin")
+  .password("password")
+  .roles("USER","ADMIN")
+  .build();
+```
+
+
+
+### Password Storage Configuration
+
+ 스프링 시큐리티는 디폴트로 `DelegatingPasswordEncoder`을 사용함. 하지만 `PasswordEncoder` 를 스프링 빈으로 정의하면 변경 가능.
+
+
+
+## 5.2 Protection Against Exploits
+
+### 5.2.1. Cross Site Request Forgery (CSRF)
+
+ 사이트에서 권한이 인증된 사용자로 하여금 다른 사이트에서 인증된 사이트에 요청을 보내도록 한다면, 강제적으로 요청이 보내짐.
+
+#### Protection Against CSRF Attacks
+
+ 공격이 먹히는 이유는 공격받는 웹사이트의 HTTP 요청과 공격하는 웹사이트의 요청이 완전히 동일하기 때문임.
+
+##### 스프링에서 제공하는 CSRF 공격 방어 메커니즘
+
+- 동기화 토큰 패턴
+- 세션 쿠키의 SameSite 속성 지정
+
+> 두 가지 모두 safe HTTP 메소드는 반드시 멱등성을 보장해야 함
+
